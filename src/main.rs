@@ -1,14 +1,16 @@
 use axum::{
+    body::StreamBody,
     extract::{Multipart, Path},
+    http::{header, HeaderMap},
     response::{Html, IntoResponse},
     routing::{get, post},
-    Extension, Form, Router, http::{HeaderMap, header}, body::StreamBody, Json,
+    Extension, Form, Json, Router,
 };
 use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
-use sqlx::{Row, Pool, Sqlite, FromRow};
-use tokio::task::spawn_blocking;
+use sqlx::{FromRow, Pool, Row, Sqlite};
 use std::net::SocketAddr;
+use tokio::task::spawn_blocking;
 use tokio_util::io::ReaderStream;
 
 #[tokio::main]
@@ -131,12 +133,18 @@ async fn get_image(Path(id): Path<i64>) -> impl IntoResponse {
     );
     headers.insert(
         header::CONTENT_DISPOSITION,
-        header::HeaderValue::from_str(&attachment).unwrap()
+        header::HeaderValue::from_str(&attachment).unwrap(),
     );
     let file = tokio::fs::File::open(&filename).await.unwrap();
     axum::response::Response::builder()
-        .header(header::CONTENT_TYPE, header::HeaderValue::from_static("image/jpeg"))
-        .header(header::CONTENT_DISPOSITION, header::HeaderValue::from_str(&attachment).unwrap())
+        .header(
+            header::CONTENT_TYPE,
+            header::HeaderValue::from_static("image/jpeg"),
+        )
+        .header(
+            header::CONTENT_DISPOSITION,
+            header::HeaderValue::from_str(&attachment).unwrap(),
+        )
         .body(StreamBody::new(ReaderStream::new(file)))
         .unwrap()
 }
@@ -151,12 +159,18 @@ async fn get_thumbnail(Path(id): Path<i64>) -> impl IntoResponse {
     );
     headers.insert(
         header::CONTENT_DISPOSITION,
-        header::HeaderValue::from_str(&attachment).unwrap()
+        header::HeaderValue::from_str(&attachment).unwrap(),
     );
     let file = tokio::fs::File::open(&filename).await.unwrap();
     axum::response::Response::builder()
-        .header(header::CONTENT_TYPE, header::HeaderValue::from_static("image/jpeg"))
-        .header(header::CONTENT_DISPOSITION, header::HeaderValue::from_str(&attachment).unwrap())
+        .header(
+            header::CONTENT_TYPE,
+            header::HeaderValue::from_static("image/jpeg"),
+        )
+        .header(
+            header::CONTENT_DISPOSITION,
+            header::HeaderValue::from_str(&attachment).unwrap(),
+        )
         .body(StreamBody::new(ReaderStream::new(file)))
         .unwrap()
 }
@@ -176,16 +190,13 @@ fn make_thumbnail(id: i64) -> anyhow::Result<()> {
 }
 
 async fn fill_missing_thumbnails(pool: &Pool<Sqlite>) -> anyhow::Result<()> {
-    let mut rows = sqlx::query("SELECT id FROM images")
-        .fetch(pool);
+    let mut rows = sqlx::query("SELECT id FROM images").fetch(pool);
 
     while let Some(row) = rows.try_next().await? {
         let id = row.get::<i64, _>(0);
         let thumbnail_path = format!("images/{id}_thumb.jpg");
         if !std::path::Path::new(&thumbnail_path).exists() {
-            spawn_blocking(move || {
-                make_thumbnail(id)
-            }).await??;
+            spawn_blocking(move || make_thumbnail(id)).await??;
         }
     }
 
@@ -208,21 +219,29 @@ async fn list_images(Extension(pool): Extension<sqlx::SqlitePool>) -> Json<Vec<I
 
 #[derive(Deserialize)]
 struct Search {
-    tags: String
+    tags: String,
 }
 
-async fn search_images(Extension(pool): Extension<sqlx::SqlitePool>, Form(form): Form<Search>) -> Html<String> {
+async fn search_images(
+    Extension(pool): Extension<sqlx::SqlitePool>,
+    Form(form): Form<Search>,
+) -> Html<String> {
     let tag = format!("%{}%", form.tags);
 
-    let rows = sqlx::query_as::<_, ImageRecord>("SELECT id, tags FROM images WHERE tags LIKE ? ORDER BY id")
-        .bind(tag)
-        .fetch_all(&pool)
-        .await
-        .unwrap();
+    let rows = sqlx::query_as::<_, ImageRecord>(
+        "SELECT id, tags FROM images WHERE tags LIKE ? ORDER BY id",
+    )
+    .bind(tag)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
 
     let mut results = String::new();
     for row in rows {
-        results.push_str(&format!("<a href=\"/image/{}\"><img src='/thumb/{}' /></a><br />", row.id, row.id));
+        results.push_str(&format!(
+            "<a href=\"/image/{}\"><img src='/thumb/{}' /></a><br />",
+            row.id, row.id
+        ));
     }
 
     let path = std::path::Path::new("src/search.html");
